@@ -176,8 +176,9 @@ export async function fetchTimeseries(
   const isFast = timestep === "5m";
   const res = await fetch(`${API_BASE}/timeseries?timestep=${timestep}&id=${id}`, {
     headers: makeHeaders(),
-    cache: isFast ? "no-store" : "default",
-    next: isFast ? undefined : { revalidate: timestep === "1h" ? 900 : 1800 },
+    ...(isFast
+      ? { cache: "no-store" as const }
+      : { next: { revalidate: timestep === "1h" ? 900 : 1800 } }),
   });
   if (!res.ok) return [];
   const body = (await res.json()) as { data?: Array<{ timestamp: number; avgHighPrice: number | null; avgLowPrice: number | null; highPriceVolume?: number | null; lowPriceVolume?: number | null }> };

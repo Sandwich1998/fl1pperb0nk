@@ -1,5 +1,6 @@
-import { notFound } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { PriceChart } from "@/components/price-chart";
 import type { TimeseriesPoint, OfficialGuidePrice } from "@/lib/osrs";
 import { getGuidePriceFresh } from "@/lib/live-price-cache";
@@ -73,12 +74,21 @@ export default async function ItemPage({ params }: { params: { id: string } }) {
     <main className="min-h-screen px-4 py-12 sm:px-8">
       <div className="mx-auto flex max-w-4xl flex-col gap-6 rounded-2xl bg-slate-900/70 p-8 shadow-2xl ring-1 ring-slate-800">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <p className="text-sm font-medium uppercase tracking-[0.12em] text-amber-400">Item overview</p>
-            <h1 className="text-3xl font-semibold text-slate-50 sm:text-4xl">{snapshot.name}</h1>
-            <p className="text-slate-300">
-              Live buy/sell snapshot, official guide price, and recent price action. Switch intervals to audit volatility.
-            </p>
+          <div className="flex items-center gap-3">
+            <Image
+              src={`https://secure.runescape.com/m=itemdb_oldschool/obj_sprite.gif?id=${snapshot.id}`}
+              alt={snapshot.name}
+              width={48}
+              height={48}
+              className="h-12 w-12 rounded-xl bg-slate-900 ring-1 ring-slate-800"
+            />
+            <div className="space-y-1">
+              <p className="text-sm font-medium uppercase tracking-[0.12em] text-amber-400">Item overview</p>
+              <h1 className="text-3xl font-semibold text-slate-50 sm:text-4xl">{snapshot.name}</h1>
+              <p className="text-slate-300">
+                Live buy/sell snapshot, official guide price, and recent moves. Switch intervals to see how it’s trending.
+              </p>
+            </div>
           </div>
           <div className="flex gap-2">
             <Link

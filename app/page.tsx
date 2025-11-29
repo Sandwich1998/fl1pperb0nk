@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import type { FlipCandidate } from "@/lib/osrs";
 
@@ -22,6 +23,9 @@ type ApiResponse =
   | { error: string };
 
 const numberFormatter = new Intl.NumberFormat("en-US");
+
+const itemIcon = (id: number) =>
+  `https://secure.runescape.com/m=itemdb_oldschool/obj_sprite.gif?id=${id}`;
 
 type SortKey =
   | "margin"
@@ -809,8 +813,8 @@ if (storedFailedTrades) {
               ⇄
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-amber-300">OSRS Trading Desk</p>
-              <p className="text-sm text-slate-200">Clean signals, quick sizing, no fluff.</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-amber-300">OSRS Trading Suite</p>
+              <p className="text-sm text-slate-200">Margin scans, sensible sizing, quick tracking.</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -845,7 +849,7 @@ if (storedFailedTrades) {
                 Live trading cockpit
               </div>
               <h1 className="text-3xl font-semibold leading-tight text-slate-50 sm:text-4xl">
-                Flip slimmer, sell faster, log everything.
+                Find flips that fit your cash, move them quickly, and keep a clean log.
               </h1>
               <p className="max-w-2xl text-base text-slate-300">
                 Scan the Grand Exchange with tuned guardrails, track fills in one place, and see which items fit your budget, time window, and appetite. Built for speed—no filler UI.
@@ -927,9 +931,9 @@ if (storedFailedTrades) {
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-sm text-slate-200 shadow-lg">
-          <p className="font-semibold text-slate-50">How to trade fast</p>
+          <p className="font-semibold text-slate-50">How to trade clean</p>
           <p className="text-slate-300">
-            Scan with your budget and volume, track only the items you actually place, and log outcomes. Keep fill time realistic and trim stacks if you’re in a hurry.
+            Set your budget and volume, track what you actually place, and log results. Keep fill times realistic and trim stacks if you’re in a hurry.
           </p>
         </div>
 
@@ -1254,8 +1258,15 @@ if (storedFailedTrades) {
                       <td className="px-2 py-2 text-slate-100">
                         <a
                           href={`/item/${flip.id}`}
-                          className="text-amber-300 hover:underline"
+                          className="flex items-center gap-2 text-amber-300 hover:underline"
                         >
+                          <Image
+                            src={itemIcon(flip.id)}
+                            alt={flip.name}
+                            width={28}
+                            height={28}
+                            className="h-7 w-7 rounded-md bg-slate-900 ring-1 ring-slate-800"
+                          />
                           {flip.name}
                         </a>
                       </td>
