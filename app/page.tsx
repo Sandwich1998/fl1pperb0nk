@@ -38,7 +38,7 @@ type SortKey =
   | "estimatedProfit";
 
 type MembershipFilter = "all" | "members" | "f2p";
-type ViewMode = "finder" | "active" | "success" | "failed" | "all";
+type ViewMode = "finder" | "catalog" | "active" | "success" | "failed" | "all";
 
 type TradeStatus = "buying" | "selling" | "done";
 
@@ -121,6 +121,18 @@ type SuccessTrade = {
   actualSoldQuantity: number | null;
 };
 
+type CatalogItem = {
+  id: number;
+  name: string;
+  members: boolean;
+  limit: number | null;
+  buy: number | null;
+  sell: number | null;
+  margin: number | null;
+  marginPct: number | null;
+  volume: number | null;
+};
+
 export default function HomePage() {
   const [budgetInput, setBudgetInput] = useState("10m");
   const [minVolumeInput, setMinVolumeInput] = useState("500");
@@ -137,6 +149,13 @@ export default function HomePage() {
   const [activeTrades, setActiveTrades] = useState<ActiveTrade[]>([]);
   const [failedTrades, setFailedTrades] = useState<FailedTrade[]>([]);
   const [successfulTrades, setSuccessfulTrades] = useState<SuccessTrade[]>([]);
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[] | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogFilter, setCatalogFilter] = useState("");
+  const [catalogSort, setCatalogSort] = useState<"volume" | "margin" | "marginPct" | "name">("volume");
+  const [catalogMembership, setCatalogMembership] = useState<MembershipFilter>("all");
+  const [catalogLimit, setCatalogLimit] = useState(240);
   const [viewMode, setViewMode] = useState<ViewMode>("finder");
   const [latestMap, setLatestMap] = useState<Record<number, { buy: number; sell: number }>>({});
   const [now, setNow] = useState(() => Date.now());
@@ -278,6 +297,39 @@ if (storedFailedTrades) {
     };
   }, [activeTrades]);
 
+  useEffect(() => {
+    if ((viewMode === "catalog" || viewMode === "all") && !catalogItems && !catalogLoading) {
+      loadCatalog();
+    }
+  }, [viewMode, catalogItems, catalogLoading]);
+
+  useEffect(() => {
+    setCatalogLimit(240);
+  }, [catalogFilter, catalogMembership, catalogSort]);
+
+  useEffect(() => {
+    setCatalogLimit(240);
+  }, [catalogItems]);
+
+
+  async function loadCatalog() {
+    setCatalogLoading(true);
+    setCatalogError(null);
+    try {
+      const res = await fetch("/api/items/list");
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Failed to load items");
+      }
+      setCatalogItems(data.items ?? []);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load items";
+      setCatalogError(message);
+    } finally {
+      setCatalogLoading(false);
+    }
+  }
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -364,6 +416,44 @@ if (storedFailedTrades) {
     });
     return arr;
   }, [filteredFlips, sortDir, sortKey]);
+
+  const filteredCatalog = useMemo(() => {
+    if (!catalogItems) return null;
+    const term = catalogFilter.trim().toLowerCase();
+    const filtered = catalogItems.filter((item) => {
+      if (catalogMembership === "members" && !item.members) return false;
+      if (catalogMembership === "f2p" && item.members) return false;
+      if (term && !item.name.toLowerCase().includes(term)) return false;
+      return true;
+    });
+    const sorted = [...filtered].sort((a, b) => {
+      if (catalogSort === "name") return a.name.localeCompare(b.name);
+      const aVal =
+        catalogSort === "volume"
+          ? a.volume ?? 0
+          : catalogSort === "margin"
+            ? a.margin ?? 0
+            : a.marginPct ?? 0;
+      const bVal =
+        catalogSort === "volume"
+          ? b.volume ?? 0
+          : catalogSort === "margin"
+            ? b.margin ?? 0
+            : b.marginPct ?? 0;
+      return bVal - aVal;
+    });
+    return sorted;
+  }, [catalogItems, catalogFilter, catalogMembership, catalogSort]);
+
+  const visibleCatalog = useMemo(() => {
+    if (!filteredCatalog) return null;
+    return filteredCatalog.slice(0, catalogLimit);
+  }, [filteredCatalog, catalogLimit]);
+
+  const catalogTruncated = useMemo(() => {
+    if (!filteredCatalog || !visibleCatalog) return false;
+    return filteredCatalog.length > visibleCatalog.length;
+  }, [filteredCatalog, visibleCatalog]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -827,6 +917,13 @@ if (storedFailedTrades) {
             </button>
             <button
               type="button"
+              onClick={() => switchViewAndScroll("catalog", "section-catalog")}
+              className="rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:-translate-y-0.5 hover:border-amber-400 hover:text-amber-200"
+            >
+              Browse items
+            </button>
+            <button
+              type="button"
               onClick={() => switchViewAndScroll("active", "section-active")}
               className="rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:-translate-y-0.5 hover:border-amber-400 hover:text-amber-200"
             >
@@ -906,6 +1003,7 @@ if (storedFailedTrades) {
           <div className="flex flex-wrap gap-2">
             {([
               { key: "finder", label: "Finder" },
+              { key: "catalog", label: "Item browser" },
               { key: "active", label: "Active trades" },
               { key: "success", label: "Success log" },
               { key: "failed", label: "Failed log" },
@@ -1318,6 +1416,216 @@ if (storedFailedTrades) {
                   ))}
                 </tbody>
               </table>
+            </div>
+          ) : null}
+        </section>
+        )}
+
+        {showSection("catalog") && (
+        <section
+          id="section-catalog"
+          className="space-y-4 rounded-xl bg-slate-950/60 p-6 shadow-lg ring-1 ring-slate-800 scroll-mt-28"
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-50">Item browser — every GE item</h2>
+              <p className="text-sm text-slate-400">
+                Fetch the full catalogue with live buy/sell snapshots. Tap a card to open its price history and details.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+              <span className="rounded-full bg-slate-900 px-3 py-1 font-semibold text-slate-200">
+                {filteredCatalog ? `${filteredCatalog.length} matches` : catalogItems ? `${catalogItems.length} items loaded` : "Ready to fetch"}
+              </span>
+              {catalogTruncated ? (
+                <span className="rounded-full bg-amber-500/10 px-3 py-1 font-semibold text-amber-200">
+                  Showing first {visibleCatalog?.length ?? 0}
+                </span>
+              ) : null}
+              <button
+                className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 font-semibold text-slate-100 transition hover:border-amber-400 hover:text-amber-200"
+                onClick={loadCatalog}
+                disabled={catalogLoading}
+              >
+                {catalogLoading ? "Refreshing…" : "Refresh list"}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-12">
+            <div className="flex flex-wrap gap-2 sm:col-span-5">
+              {(["all", "members", "f2p"] as MembershipFilter[]).map((opt) => {
+                const active = catalogMembership === opt;
+                const labels: Record<MembershipFilter, string> = {
+                  all: "All items",
+                  members: "Members",
+                  f2p: "F2P",
+                };
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setCatalogMembership(opt)}
+                    className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                      active
+                        ? "bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20"
+                        : "bg-slate-800 text-slate-100 hover:bg-slate-700"
+                    }`}
+                  >
+                    {labels[opt]}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2 sm:col-span-4">
+              <label className="text-sm text-slate-300">Search</label>
+              <input
+                type="text"
+                value={catalogFilter}
+                onChange={(e) => setCatalogFilter(e.target.value)}
+                placeholder="Item name"
+                className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/30"
+              />
+            </div>
+            <div className="flex items-center gap-2 sm:col-span-3">
+              <label className="text-sm text-slate-300">Sort</label>
+              <select
+                value={catalogSort}
+                onChange={(e) => setCatalogSort(e.target.value as typeof catalogSort)}
+                className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/30"
+              >
+                <option value="volume">Highest volume</option>
+                <option value="margin">Best margin</option>
+                <option value="marginPct">Margin %</option>
+                <option value="name">Name</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2 sm:col-span-12">
+              <label className="text-sm text-slate-300">Showing</label>
+              <select
+                value={catalogLimit}
+                onChange={(e) => setCatalogLimit(Number(e.target.value) || catalogLimit)}
+                className="w-32 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/30"
+              >
+                <option value={120}>Top 120</option>
+                <option value={240}>Top 240</option>
+                <option value={480}>Top 480</option>
+                <option value={960}>Top 960</option>
+                <option value={999999}>All</option>
+              </select>
+              <button
+                className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 ring-1 ring-slate-700 transition hover:bg-slate-700"
+                onClick={() => setCatalogLimit((prev) => Math.min((filteredCatalog?.length ?? prev), prev + 240))}
+                disabled={!catalogTruncated}
+              >
+                Load more
+              </button>
+              {catalogTruncated ? (
+                <span className="text-xs text-slate-400">
+                  Showing {visibleCatalog?.length ?? 0} of {filteredCatalog?.length ?? 0}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          {catalogError ? (
+            <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              {catalogError}
+            </div>
+          ) : null}
+
+          {catalogLoading && !catalogItems ? (
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+              Loading item catalog…
+            </div>
+          ) : null}
+
+          {!catalogLoading && (!visibleCatalog || visibleCatalog.length === 0) ? (
+            <div className="flex flex-col items-start gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+              <span>No items to show yet.</span>
+              <button
+                className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-950 shadow-lg shadow-amber-500/25 transition hover:bg-amber-400"
+                onClick={loadCatalog}
+              >
+                Fetch items
+              </button>
+            </div>
+          ) : null}
+
+          {visibleCatalog && visibleCatalog.length > 0 ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {visibleCatalog.map((item) => (
+                <a
+                  key={item.id}
+                  href={`/item/${item.id}`}
+                  className="group flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-4 ring-1 ring-transparent transition hover:-translate-y-1 hover:border-amber-400/60 hover:ring-amber-500/30"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <Image
+                        src={itemIcon(item.id)}
+                        alt={item.name}
+                        width={40}
+                        height={40}
+                        className="h-10 w-10 rounded-lg bg-slate-950 ring-1 ring-slate-800"
+                      />
+                      <div className="space-y-1">
+                        <div className="text-sm font-semibold text-slate-100">{item.name}</div>
+                        <div className="text-[11px] text-slate-500">
+                          Limit {item.limit ? numberFormatter.format(item.limit) : "—"}
+                        </div>
+                      </div>
+                    </div>
+                    <span
+                      className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
+                        item.members
+                          ? "bg-emerald-500/10 text-emerald-200"
+                          : "bg-sky-500/10 text-sky-200"
+                      }`}
+                    >
+                      {item.members ? "Members" : "F2P"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs text-slate-300">
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Buy</div>
+                      <div className="font-semibold text-emerald-200">
+                        {item.buy !== null ? numberFormatter.format(item.buy) : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Sell</div>
+                      <div className="font-semibold text-amber-200">
+                        {item.sell !== null ? numberFormatter.format(item.sell) : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Volume/day</div>
+                      <div className="font-semibold text-slate-100">
+                        {item.volume !== null ? numberFormatter.format(item.volume) : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Margin</div>
+                      <div className="font-semibold text-amber-200">
+                        {item.margin !== null ? numberFormatter.format(item.margin) : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Margin %</div>
+                      <div className="font-semibold text-slate-100">
+                        {item.marginPct !== null ? `${(item.marginPct * 100).toFixed(2)}%` : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Track</div>
+                      <div className="font-semibold text-amber-200 group-hover:text-amber-100">
+                        View details →
+                      </div>
+                    </div>
+                  </div>
+                </a>
+              ))}
             </div>
           ) : null}
         </section>

@@ -120,7 +120,7 @@ export default async function ItemPage({ params }: { params: { id: string } }) {
           />
         </div>
 
-        <PriceChart itemId={snapshot.id} />
+        <PriceChart itemId={snapshot.id} defaultTimeframe="5m" />
       </div>
     </main>
   );

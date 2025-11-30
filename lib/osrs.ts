@@ -60,6 +60,8 @@ export interface FlipCandidate {
   profitPerHour: number;
   fit: "low" | "medium" | "high";
   fitReason: string;
+  trendScore?: number;
+  trendFlags?: string[];
 }
 
 export interface TimeseriesPoint {
@@ -260,6 +262,8 @@ export async function findBestFlips(
     autoDistribute?: boolean;
     favoriteIds?: number[];
     membership?: "all" | "members" | "f2p";
+    trendGuard?: boolean;
+    trendSampleSize?: number;
   },
 ): Promise<FlipCandidate[]> {
   const minVolume = options?.minVolume ?? DEFAULT_MIN_VOLUME;
@@ -278,6 +282,8 @@ export async function findBestFlips(
   const totalSlots =
     Math.min(MAX_SLOTS, Math.max(1, Math.floor(options?.totalSlots ?? DEFAULT_TOTAL_SLOTS))) || MAX_SLOTS;
   const membershipFilter = options?.membership ?? "all";
+  const enableTrendGuard = options?.trendGuard !== false;
+  const trendSampleSize = Math.max(10, Math.min(200, options?.trendSampleSize ?? 80));
 
   const [mappingRes, latestRes, volumesRes] = await Promise.all([
     fetchMapping(),
@@ -321,6 +327,10 @@ export async function findBestFlips(
     const highMarginThin = marginPct >= HIGH_MARGIN_SKIP_PCT && volume < Math.max(minVolume, HIGH_MARGIN_MIN_VOLUME);
     const wideSpreadThin = spreadPct >= WIDE_SPREAD_PCT && volume < WIDE_SPREAD_MIN_VOLUME;
     if (volume < minVolume || highMarginThin || wideSpreadThin) continue;
+
+    if (marginPct >= 0.5 && volume < 150_000) {
+      continue;
+    }
 
     const baseBuyAggro = buyAggressiveness;
     const baseSellAggro = sellAggressiveness;
@@ -373,9 +383,10 @@ export async function findBestFlips(
     if (maxAffordableQty <= 0) continue;
 
     const perHourVolume = volume / 24;
-    // Slow down fill/sell speed to account for order competition and short windows
-    const buyPerHour = perHourVolume * (0.6 * tightWindow);
-    const sellPerHour = perHourVolume * (0.5 * tightWindow);
+    const riskSpeedMultiplier = computeRiskSpeedMultiplier({ marginPct });
+    // Slow down fill/sell speed to account for order competition, short windows, and fragile margins
+    const buyPerHour = perHourVolume * (0.6 * tightWindow) * riskSpeedMultiplier;
+    const sellPerHour = perHourVolume * (0.5 * tightWindow) * riskSpeedMultiplier;
     const effectiveMaxFill = maxFillHours;
     const timeCapQty =
       buyPerHour > 0 ? Math.floor(buyPerHour * effectiveMaxFill * slotsPerItem * favFillBoost) : 0;
@@ -457,7 +468,32 @@ export async function findBestFlips(
   }
 
   results.sort((a, b) => b.estimatedProfit - a.estimatedProfit);
-  return results.slice(0, limit);
+
+  if (!enableTrendGuard || results.length === 0) {
+    return results.slice(0, limit);
+  }
+
+  const trendEvaluations = await evaluateTrends(results.slice(0, trendSampleSize));
+
+  const adjusted: FlipCandidate[] = [];
+  for (const candidate of results) {
+    const trend = trendEvaluations[candidate.id];
+    if (trend && !trend.ok) {
+      continue;
+    }
+    const score = trend?.score ?? 1;
+    const adjustment = Math.min(1.05, Math.max(0.5, score));
+    adjusted.push({
+      ...candidate,
+      trendScore: score,
+      trendFlags: trend?.flags,
+      estimatedProfit: Math.floor(candidate.estimatedProfit * adjustment),
+      profitPerHour: candidate.profitPerHour * adjustment,
+    });
+  }
+
+  adjusted.sort((a, b) => b.estimatedProfit - a.estimatedProfit);
+  return adjusted.slice(0, limit);
 }
 
 function clamp01(value: number, max = 1) {
@@ -497,6 +533,149 @@ function computeRiskSizeMultiplier({
   }
 
   return Math.max(RISK_SIZE_FLOOR, Math.min(1, multiplier));
+}
+
+function computeRiskSpeedMultiplier({ marginPct }: { marginPct: number }) {
+  if (marginPct >= 0.6) return 0.35;
+  if (marginPct >= 0.5) return 0.45;
+  if (marginPct >= 0.4) return 0.6;
+  if (marginPct >= 0.3) return 0.75;
+  return 1;
+}
+
+type TrendEvaluation = {
+  ok: boolean;
+  score: number;
+  flags: string[];
+};
+
+async function evaluateTrends(
+  candidates: FlipCandidate[],
+  sampleSize = 80,
+): Promise<Record<number, TrendEvaluation>> {
+  const map: Record<number, TrendEvaluation> = {};
+  const subset = candidates.slice(0, sampleSize);
+  const batchSize = 6;
+
+  for (let i = 0; i < subset.length; i += batchSize) {
+    const batch = subset.slice(i, i + batchSize);
+    const results = await Promise.all(
+      batch.map(async (c) => {
+        try {
+          const points = await fetchTimeseries(c.id, "1h");
+          return { id: c.id, eval: computeTrendScore(points) };
+        } catch (err) {
+          console.error("trend evaluation failed", c.id, err);
+          return { id: c.id, eval: { ok: true, score: 0.9, flags: ["trend-error"] } };
+        }
+      }),
+    );
+    for (const res of results) {
+      map[res.id] = res.eval;
+    }
+  }
+
+  return map;
+}
+
+function computeTrendScore(points: TimeseriesPoint[]): TrendEvaluation {
+  if (!points || points.length < 3) {
+    return { ok: true, score: 0.9, flags: ["thin-history"] };
+  }
+
+  const sorted = [...points].sort((a, b) => a.timestamp - b.timestamp).slice(-12);
+  const mids = sorted
+    .map((p) => {
+      if (typeof p.avgHighPrice === "number" && typeof p.avgLowPrice === "number") {
+        return (p.avgHighPrice + p.avgLowPrice) / 2;
+      }
+      return p.avgHighPrice ?? p.avgLowPrice ?? null;
+    })
+    .filter((v): v is number => v !== null);
+
+  if (mids.length < 3) {
+    return { ok: true, score: 0.9, flags: ["sparse-pricing"] };
+  }
+
+  const spreads = sorted
+    .map((p) => {
+      if (typeof p.avgHighPrice === "number" && typeof p.avgLowPrice === "number") {
+        const mid = (p.avgHighPrice + p.avgLowPrice) / 2;
+        const spread = p.avgHighPrice - p.avgLowPrice;
+        return mid > 0 ? spread / mid : null;
+      }
+      return null;
+    })
+    .filter((v): v is number => v !== null);
+
+  const vols = sorted.map((p) => (p.highPriceVolume ?? 0) + (p.lowPriceVolume ?? 0));
+
+  const first = mids[0];
+  const last = mids[mids.length - 1];
+  const changePct = first > 0 ? (last - first) / first : 0;
+  const recentMids = mids.slice(-4);
+  const recentRange = Math.max(...recentMids) - Math.min(...recentMids);
+  const recentRangePct = recentMids.length > 0
+    ? recentRange / Math.max(1, (Math.max(...recentMids) + Math.min(...recentMids)) / 2)
+    : 0;
+
+  const firstSpread = spreads[0] ?? 0;
+  const lastSpread = spreads[spreads.length - 1] ?? firstSpread;
+  const spreadDelta = lastSpread - firstSpread;
+
+  const avgVol = vols.length > 0 ? vols.reduce((a, b) => a + b, 0) / vols.length : 0;
+  const recentVols = vols.slice(-4);
+  const recentAvgVol = recentVols.length > 0
+    ? recentVols.reduce((a, b) => a + b, 0) / recentVols.length
+    : avgVol;
+  const volDrop = avgVol > 0 ? recentAvgVol / avgVol : 1;
+
+  const flags: string[] = [];
+  let score = 1;
+  let ok = true;
+
+  if (changePct <= -0.15) {
+    flags.push("drop-15pct");
+    ok = false;
+  } else if (changePct <= -0.1 && spreadDelta > 0.05) {
+    flags.push("drop-and-widen");
+    ok = false;
+  }
+
+  if (!ok) {
+    return { ok, score: 0.4, flags };
+  }
+
+  if (changePct < -0.08) {
+    flags.push("downward-drift");
+    score *= 0.6;
+  } else if (changePct < -0.04) {
+    flags.push("soft-drift");
+    score *= 0.8;
+  } else if (changePct > 0.05) {
+    flags.push("uptrend");
+    score *= 1.05;
+  }
+
+  if (recentRangePct > 0.25) {
+    flags.push("choppy");
+    score *= 0.85;
+  }
+
+  if (spreadDelta > 0.08) {
+    flags.push("spread-widening");
+    score *= 0.8;
+  } else if (spreadDelta < -0.05) {
+    flags.push("spread-tightening");
+    score *= 1.03;
+  }
+
+  if (volDrop < 0.5) {
+    flags.push("volume-fading");
+    score *= 0.82;
+  }
+
+  return { ok, score, flags };
 }
 
 function computeFitLevel({
