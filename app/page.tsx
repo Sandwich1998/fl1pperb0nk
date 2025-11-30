@@ -922,6 +922,12 @@ if (storedFailedTrades) {
             >
               Browse items
             </button>
+            <a
+              href="/performance"
+              className="rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:-translate-y-0.5 hover:border-amber-400 hover:text-amber-200"
+            >
+              Performance lab
+            </a>
             <button
               type="button"
               onClick={() => switchViewAndScroll("active", "section-active")}
