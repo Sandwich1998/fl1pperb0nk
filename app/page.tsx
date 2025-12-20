@@ -959,3 +959,726 @@ if (storedFailedTrades) {
           </div>
         </section>
         )}
+
+        {showSection("catalog") && (
+        <section
+          id="section-catalog"
+          className="space-y-4 rounded-xl bg-slate-950/60 p-6 shadow-lg ring-1 ring-slate-800 scroll-mt-28"
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-50">Item browser — every GE item</h2>
+              <p className="text-sm text-slate-400">
+                Fetch the full catalogue with live buy/sell snapshots. Tap a card to open its price history and details.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+              <span className="rounded-full bg-slate-900 px-3 py-1 font-semibold text-slate-200">
+                {filteredCatalog ? `${filteredCatalog.length} matches` : catalogItems ? `${catalogItems.length} items loaded` : "Ready to fetch"}
+              </span>
+              {catalogTruncated ? (
+                <span className="rounded-full bg-amber-500/10 px-3 py-1 font-semibold text-amber-200">
+                  Showing first {visibleCatalog?.length ?? 0}
+                </span>
+              ) : null}
+              <button
+                className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 font-semibold text-slate-100 transition hover:border-amber-400 hover:text-amber-200"
+                onClick={loadCatalog}
+                disabled={catalogLoading}
+              >
+                {catalogLoading ? "Refreshing…" : "Refresh list"}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-12">
+            <div className="flex flex-wrap gap-2 sm:col-span-5">
+              {(["all", "members", "f2p"] as MembershipFilter[]).map((opt) => {
+                const active = catalogMembership === opt;
+                const labels: Record<MembershipFilter, string> = {
+                  all: "All items",
+                  members: "Members",
+                  f2p: "F2P",
+                };
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setCatalogMembership(opt)}
+                    className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                      active
+                        ? "bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20"
+                        : "bg-slate-800 text-slate-100 hover:bg-slate-700"
+                    }`}
+                  >
+                    {labels[opt]}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2 sm:col-span-4">
+              <label className="text-sm text-slate-300">Search</label>
+              <input
+                type="text"
+                value={catalogFilter}
+                onChange={(e) => setCatalogFilter(e.target.value)}
+                placeholder="Item name"
+                className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/30"
+              />
+            </div>
+            <div className="flex items-center gap-2 sm:col-span-3">
+              <label className="text-sm text-slate-300">Sort</label>
+              <select
+                value={catalogSort}
+                onChange={(e) => setCatalogSort(e.target.value as typeof catalogSort)}
+                className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/30"
+              >
+                <option value="volume">Highest volume</option>
+                <option value="margin">Best margin</option>
+                <option value="marginPct">Margin %</option>
+                <option value="name">Name</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2 sm:col-span-12">
+              <label className="text-sm text-slate-300">Showing</label>
+              <select
+                value={catalogLimit}
+                onChange={(e) => setCatalogLimit(Number(e.target.value) || catalogLimit)}
+                className="w-32 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/30"
+              >
+                <option value={120}>Top 120</option>
+                <option value={240}>Top 240</option>
+                <option value={480}>Top 480</option>
+                <option value={960}>Top 960</option>
+                <option value={999999}>All</option>
+              </select>
+              <button
+                className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 ring-1 ring-slate-700 transition hover:bg-slate-700"
+                onClick={() => setCatalogLimit((prev) => Math.min((filteredCatalog?.length ?? prev), prev + 240))}
+                disabled={!catalogTruncated}
+              >
+                Load more
+              </button>
+              {catalogTruncated ? (
+                <span className="text-xs text-slate-400">
+                  Showing {visibleCatalog?.length ?? 0} of {filteredCatalog?.length ?? 0}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          {catalogError ? (
+            <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              {catalogError}
+            </div>
+          ) : null}
+
+          {catalogLoading && !catalogItems ? (
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+              Loading item catalog…
+            </div>
+          ) : null}
+
+          {!catalogLoading && (!visibleCatalog || visibleCatalog.length === 0) ? (
+            <div className="flex flex-col items-start gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+              <span>No items to show yet.</span>
+              <button
+                className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-950 shadow-lg shadow-amber-500/25 transition hover:bg-amber-400"
+                onClick={loadCatalog}
+              >
+                Fetch items
+              </button>
+            </div>
+          ) : null}
+
+          {visibleCatalog && visibleCatalog.length > 0 ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {visibleCatalog.map((item) => (
+                <a
+                  key={item.id}
+                  href={`/item/${item.id}`}
+                  className="group flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-4 ring-1 ring-transparent transition hover:-translate-y-1 hover:border-amber-400/60 hover:ring-amber-500/30"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <Image
+                        src={itemIcon(item.id)}
+                        alt={item.name}
+                        width={40}
+                        height={40}
+                        className="h-10 w-10 rounded-lg bg-slate-950 ring-1 ring-slate-800"
+                      />
+                      <div className="space-y-1">
+                        <div className="text-sm font-semibold text-slate-100">{item.name}</div>
+                        <div className="text-[11px] text-slate-500">
+                          Limit {item.limit ? numberFormatter.format(item.limit) : "—"}
+                        </div>
+                      </div>
+                    </div>
+                    <span
+                      className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
+                        item.members
+                          ? "bg-emerald-500/10 text-emerald-200"
+                          : "bg-sky-500/10 text-sky-200"
+                      }`}
+                    >
+                      {item.members ? "Members" : "F2P"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs text-slate-300">
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Buy</div>
+                      <div className="font-semibold text-emerald-200">
+                        {item.buy !== null ? numberFormatter.format(item.buy) : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Sell</div>
+                      <div className="font-semibold text-amber-200">
+                        {item.sell !== null ? numberFormatter.format(item.sell) : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Volume/day</div>
+                      <div className="font-semibold text-slate-100">
+                        {item.volume !== null ? numberFormatter.format(item.volume) : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Margin</div>
+                      <div className="font-semibold text-amber-200">
+                        {item.margin !== null ? numberFormatter.format(item.margin) : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Margin %</div>
+                      <div className="font-semibold text-slate-100">
+                        {item.marginPct !== null ? `${(item.marginPct * 100).toFixed(2)}%` : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Track</div>
+                      <div className="font-semibold text-amber-200 group-hover:text-amber-100">
+                        View details →
+                      </div>
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          ) : null}
+        </section>
+        )}
+
+        {showSection("hot") && (
+        <section
+          id="section-hot"
+          className="space-y-4 rounded-xl bg-slate-950/60 p-6 shadow-lg ring-1 ring-slate-800 scroll-mt-28"
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-50">Hot volume picks</h2>
+              <p className="text-sm text-slate-400">No inputs—just the highest volume, freshest flips we can find right now.</p>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <span className="rounded-full bg-slate-900 px-3 py-1 font-semibold text-slate-200">
+                {hotFlips ? `${hotFlips.length} items` : hotLoading ? "Loading…" : "Ready"}
+              </span>
+              <button
+                className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 font-semibold text-slate-100 transition hover:border-amber-400 hover:text-amber-200"
+                onClick={loadHot}
+                disabled={hotLoading}
+              >
+                {hotLoading ? "Refreshing…" : "Refresh"}
+              </button>
+            </div>
+          </div>
+
+          {hotError ? (
+            <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              {hotError}
+            </div>
+          ) : null}
+
+          {hotLoading && !hotFlips ? (
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+              Loading high-volume flips…
+            </div>
+          ) : null}
+
+          {hotFlips && hotFlips.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full border-collapse text-xs sm:text-sm">
+                <thead>
+                  <tr className="bg-slate-900 text-left text-[11px] uppercase tracking-wide text-slate-400 sm:text-xs">
+                    <th className="px-2 py-2 text-left">Item</th>
+                    <th className="px-2 py-2 text-right">Buy</th>
+                    <th className="px-2 py-2 text-right">Sell</th>
+                    <th className="px-2 py-2 text-right">Volume/day</th>
+                    <th className="px-2 py-2 text-right">Margin</th>
+                    <th className="px-2 py-2 text-right">Margin %</th>
+                    <th className="px-2 py-2 text-right text-amber-300">Profit/hr</th>
+                    <th className="px-2 py-2 text-right">Suggested qty</th>
+                    <th className="px-2 py-2 text-right">Track</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {hotFlips.map((flip) => (
+                    <tr key={flip.id} className="hover:bg-slate-900/60 transition-colors">
+                      <td className="px-2 py-2 text-left text-slate-100">
+                        <a href={`/item/${flip.id}`} className="flex items-center gap-2 text-amber-300 hover:underline">
+                          <Image
+                            src={itemIcon(flip.id)}
+                            alt={flip.name}
+                            width={28}
+                            height={28}
+                            className="h-7 w-7 rounded-md bg-slate-900 ring-1 ring-slate-800"
+                          />
+                          {flip.name}
+                        </a>
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-slate-200">
+                        {numberFormatter.format(flip.buyPrice)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-slate-200">
+                        {numberFormatter.format(flip.sellPrice)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-slate-200">
+                        {numberFormatter.format(flip.volume)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-slate-200">
+                        {numberFormatter.format(flip.margin)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-slate-200">
+                        {(flip.marginPct * 100).toFixed(2)}%
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-amber-300">
+                        {numberFormatter.format(Math.round(flip.profitPerHour))}
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-slate-200">
+                        {numberFormatter.format(flip.effectiveQty)}
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        <button
+                          onClick={() => addTrade(flip)}
+                          className="rounded-lg bg-slate-800 px-2 py-1 text-[11px] font-semibold text-amber-300 hover:bg-slate-700"
+                        >
+                          Track
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </section>
+        )}
+
+        {showSection("active") && (
+        <section
+          id="section-active"
+          className="space-y-4 rounded-xl bg-slate-950/60 p-6 shadow-lg ring-1 ring-slate-800 scroll-mt-28"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-50">Active trades</h2>
+              <p className="text-sm text-slate-400">
+                Track buys and sells with live countdowns. Click stage to move from buying → selling → done.
+              </p>
+            </div>
+            <div className="text-sm text-slate-400">
+              Total tracked: {activeTrades.length}
+            </div>
+          </div>
+
+          {activeTrades.length === 0 ? (
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+              No active trades. Use the “Track” button in the table to add one.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {activeTrades.map((trade, idx) => {
+                const { remaining, percent, overdue, overBy } = remainingTime(trade);
+                const stageLabel =
+                  trade.status === "buying" ? "Buying" : trade.status === "selling" ? "Selling" : "Done";
+                const live = latestMap[trade.id];
+                const targetHit = live && live.sell >= trade.sellPrice;
+                return (
+                  <div
+                    key={`${trade.id}-${trade.startedAt}-${idx}`}
+                    className={`rounded-lg border ${targetHit ? "border-rose-500/60" : "border-slate-800"} bg-slate-900/80 p-4 shadow`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-100">
+                          <a href={`/item/${trade.id}`} className="text-amber-300 hover:underline">
+                            {trade.name}
+                          </a>
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          Qty {numberFormatter.format(trade.quantity)} • Buy {numberFormatter.format(trade.buyPrice)} • Sell {numberFormatter.format(trade.sellPrice)}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          Est profit: {numberFormatter.format(trade.estimatedProfit)}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {targetHit ? (
+                          <span className="rounded-full bg-rose-500/30 px-3 py-1 text-xs font-semibold text-rose-100">
+                            Sell target hit
+                          </span>
+                        ) : null}
+                        <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-amber-300">
+                          {stageLabel}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <div className="flex justify-between text-xs text-slate-400">
+                        <span>Remaining</span>
+                        <span className={overdue ? "text-red-300" : ""}>
+                          {overdue ? `Overdue by ${overBy.toFixed(2)}h` : `${remaining.toFixed(2)}h`}
+                        </span>
+                      </div>
+                      <div className="mt-1 h-2 rounded-full bg-slate-800">
+                        <div
+                          className={`h-2 rounded-full ${overdue ? "bg-red-400" : "bg-emerald-400"}`}
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-3 flex gap-2 text-xs">
+                      <button
+                        className="rounded-lg bg-slate-800 px-3 py-2 font-semibold text-slate-100 hover:bg-slate-700"
+                        onClick={() => markTradeNextStage(idx)}
+                        >
+                        {trade.status === "buying"
+                          ? "Mark selling"
+                          : trade.status === "selling"
+                            ? "Mark done"
+                            : "Done"}
+                      </button>
+                      <button
+                        className="rounded-lg bg-amber-900/60 px-3 py-2 font-semibold text-amber-100 hover:bg-amber-800/70"
+                        onClick={() => markTradeFailed(idx)}
+                      >
+                        Mark failed
+                      </button>
+                      <button
+                        className="rounded-lg bg-emerald-900/60 px-3 py-2 font-semibold text-emerald-100 hover:bg-emerald-800/70"
+                        onClick={() => markTradeSuccess(idx)}
+                      >
+                        Mark success
+                      </button>
+                          <button
+                            className="rounded-lg bg-red-900/50 px-3 py-2 font-semibold text-red-200 hover:bg-red-800/70"
+                            onClick={() => removeTrade(idx)}
+                          >
+                            Remove
+                          </button>
+                          <button
+                            className="rounded-lg bg-slate-800 px-3 py-2 font-semibold text-slate-100 hover:bg-slate-700"
+                            onClick={() => updateActiveNote(idx)}
+                          >
+                            Add/edit note
+                          </button>
+                          <button
+                            className="rounded-lg bg-slate-800 px-3 py-2 font-semibold text-slate-100 hover:bg-slate-700"
+                            onClick={() => updateActiveQuantity(idx)}
+                          >
+                            Edit quantity
+                          </button>
+                        </div>
+                        {trade.note ? (
+                          <div className="mt-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-xs text-slate-200">
+                            Note: {trade.note}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+        </section>
+        )}
+
+        {showSection("success") && (
+        <section
+          id="section-success"
+          className="space-y-4 rounded-xl bg-slate-950/60 p-6 shadow-lg ring-1 ring-slate-800 scroll-mt-28"
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-50">Success trades log</h2>
+              <p className="text-sm text-slate-400">
+                Capture wins, what worked, and how much filled/sold within the estimated windows.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 text-sm text-slate-400">
+              <span>Total logged: {successfulTrades.length}</span>
+              {successfulTrades.length > 0 ? (
+                <>
+                  <button
+                    className="rounded-lg bg-slate-800 px-3 py-2 font-semibold text-slate-100 hover:bg-slate-700"
+                    onClick={() => copyJsonToClipboard("success trades", successfulTrades)}
+                  >
+                    Copy JSON
+                  </button>
+                  <button
+                    className="rounded-lg bg-slate-800 px-3 py-2 font-semibold text-slate-100 hover:bg-slate-700"
+                    onClick={clearSuccessTrades}
+                  >
+                    Clear log
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </div>
+
+          {successfulTrades.length === 0 ? (
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+              No successes logged yet. Use “Mark success” on an active trade to capture it here.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {successfulTrades.map((s, idx) => {
+                const ranHours = (s.completedAt - s.startedAt) / (1000 * 60 * 60);
+                return (
+                  <div
+                    key={`${s.id}-${s.completedAt}-${idx}`}
+                    className="rounded-lg border border-emerald-900/60 bg-slate-900/80 p-4 shadow"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-100">
+                          <a href={`/item/${s.id}`} className="text-emerald-300 hover:underline">
+                            {s.name}
+                          </a>
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          Qty {numberFormatter.format(s.quantity)} • Buy {numberFormatter.format(s.buyPrice)} • Sell {numberFormatter.format(s.sellPrice)}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          Est buy {s.estBuyHours.toFixed(2)}h • Est sell {s.estSellHours.toFixed(2)}h
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          Volume/day {numberFormatter.format(s.volume)} • Margin {numberFormatter.format(s.margin)} ({(s.marginPct * 100).toFixed(2)}%)
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          Est profit {numberFormatter.format(s.estimatedProfit)} • Profit/hr {numberFormatter.format(Math.round(s.profitPerHour))}
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          Run inputs — Budget: {s.settings.budget ? numberFormatter.format(s.settings.budget) : "N/A"} gp, Min vol:{" "}
+                          {s.settings.minVolume !== null ? numberFormatter.format(s.settings.minVolume) : "N/A"}, Max fill:{" "}
+                          {s.settings.maxFillHours ?? "N/A"}h, Buy aggro: {s.settings.buyAggro ?? "N/A"}, Sell aggro:{" "}
+                          {s.settings.sellAggro ?? "N/A"}, Limit: {s.settings.limit ?? "N/A"}, Items: {s.settings.membership}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-2 text-right">
+                        <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-[11px] font-semibold text-emerald-200">
+                          Completed
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Logged {new Date(s.completedAt).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-300">
+                      <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                        <div className="text-slate-400">Bought within est.</div>
+                        <div className="font-semibold text-slate-100">
+                          {s.boughtWithinEstimate !== null
+                            ? numberFormatter.format(s.boughtWithinEstimate)
+                            : "Unknown"}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                        <div className="text-slate-400">Sold within est.</div>
+                        <div className="font-semibold text-slate-100">
+                          {s.soldWithinEstimate !== null
+                            ? numberFormatter.format(s.soldWithinEstimate)
+                            : "Unknown"}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                        <div className="text-slate-400">Actual buy</div>
+                        <div className="font-semibold text-slate-100">
+                          {s.actualBuyPrice !== null
+                            ? numberFormatter.format(s.actualBuyPrice)
+                            : numberFormatter.format(s.buyPrice)}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                        <div className="text-slate-400">Actual sell</div>
+                        <div className="font-semibold text-slate-100">
+                          {s.actualSellPrice !== null
+                            ? numberFormatter.format(s.actualSellPrice)
+                            : numberFormatter.format(s.sellPrice)}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                        <div className="text-slate-400">Actual sold qty</div>
+                        <div className="font-semibold text-slate-100">
+                          {s.actualSoldQuantity !== null
+                            ? numberFormatter.format(s.actualSoldQuantity)
+                            : numberFormatter.format(s.quantity)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-xs text-slate-300">
+                      <span className="font-semibold text-slate-200">
+                        Ran for {ranHours.toFixed(2)}h
+                      </span>
+                      <span className="text-slate-400">
+                        Started {new Date(s.startedAt).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <div className="mt-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-50">
+                      {s.note ? (
+                        <span className="block">
+                          Note: <span className="text-emerald-100">{s.note}</span>
+                        </span>
+                      ) : (
+                        <span className="block text-emerald-100/80">No note added.</span>
+                      )}
+                    </div>
+                    <div className="mt-3 flex justify-end text-xs">
+                      <button
+                        className="rounded-lg bg-slate-800 px-3 py-2 font-semibold text-slate-100 hover:bg-slate-700"
+                        onClick={() => removeSuccessTrade(idx)}
+                      >
+                        Remove from log
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+        )}
+
+        {showSection("failed") && (
+        <section
+          id="section-failed"
+          className="space-y-4 rounded-xl bg-slate-950/60 p-6 shadow-lg ring-1 ring-slate-800"
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-50">Failed trades log</h2>
+              <p className="text-sm text-slate-400">
+                Keep a running list of flips that missed so we can spot patterns and improve the algorithm.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 text-sm text-slate-400">
+              <span>Total logged: {failedTrades.length}</span>
+              {failedTrades.length > 0 ? (
+                <>
+                  <button
+                    className="rounded-lg bg-slate-800 px-3 py-2 font-semibold text-slate-100 hover:bg-slate-700"
+                    onClick={() => copyJsonToClipboard("failed trades", failedTrades)}
+                  >
+                    Copy JSON
+                  </button>
+                  <button
+                    className="rounded-lg bg-slate-800 px-3 py-2 font-semibold text-slate-100 hover:bg-slate-700"
+                    onClick={clearFailedTrades}
+                  >
+                    Clear log
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </div>
+
+          {failedTrades.length === 0 ? (
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+              No failed trades logged yet. Use “Mark failed” on an active trade to capture it here.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {failedTrades.map((fail, idx) => {
+                const ranHours = (fail.failedAt - fail.startedAt) / (1000 * 60 * 60);
+                const stageLabel =
+                  fail.failedStage === "buying"
+                    ? "During buy"
+                    : fail.failedStage === "selling"
+                      ? "During sell"
+                      : "After close";
+                return (
+                  <div
+                    key={`${fail.id}-${fail.failedAt}-${idx}`}
+                    className="rounded-lg border border-amber-900/60 bg-slate-900/80 p-4 shadow"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-100">
+                          <a href={`/item/${fail.id}`} className="text-amber-300 hover:underline">
+                            {fail.name}
+                          </a>
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          Qty {numberFormatter.format(fail.quantity)} • Buy {numberFormatter.format(fail.buyPrice)} • Sell {numberFormatter.format(fail.sellPrice)}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          Est buy {fail.estBuyHours.toFixed(2)}h • Est sell {fail.estSellHours.toFixed(2)}h
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          Volume/day {numberFormatter.format(fail.volume)} • Margin {numberFormatter.format(fail.margin)} ({(fail.marginPct * 100).toFixed(2)}%)
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          Est profit {numberFormatter.format(fail.estimatedProfit)} • Profit/hr {numberFormatter.format(Math.round(fail.profitPerHour))}
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          Run inputs — Budget: {fail.settings.budget ? numberFormatter.format(fail.settings.budget) : "N/A"} gp, Min vol:{" "}
+                          {fail.settings.minVolume !== null ? numberFormatter.format(fail.settings.minVolume) : "N/A"}, Max fill:{" "}
+                          {fail.settings.maxFillHours ?? "N/A"}h, Buy aggro: {fail.settings.buyAggro ?? "N/A"}, Sell aggro:{" "}
+                          {fail.settings.sellAggro ?? "N/A"}, Limit: {fail.settings.limit ?? "N/A"}, Items: {fail.settings.membership}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-2 text-right">
+                        <span className="rounded-full bg-amber-500/20 px-3 py-1 text-[11px] font-semibold text-amber-200">
+                          {stageLabel}
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Logged {new Date(fail.failedAt).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between text-xs text-slate-300">
+                      <span className="font-semibold text-slate-200">
+                        Ran for {ranHours.toFixed(2)}h
+                      </span>
+                      <span className="text-slate-400">
+                        Started {new Date(fail.startedAt).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-50">
+                      {fail.reason ? (
+                        <span className="block">
+                          Note: <span className="text-amber-100">{fail.reason}</span>
+                        </span>
+                      ) : (
+                        <span className="block text-amber-100/80">No note added.</span>
+                      )}
+                    </div>
+                    <div className="mt-3 flex justify-end text-xs">
+                      <button
+                        className="rounded-lg bg-slate-800 px-3 py-2 font-semibold text-slate-100 hover:bg-slate-700"
+                        onClick={() => removeFailedTrade(idx)}
+                      >
+                        Remove from log
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+        )}
+      </div>
+    </main>
+  );
+}
