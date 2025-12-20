@@ -38,7 +38,7 @@ type SortKey =
   | "estimatedProfit";
 
 type MembershipFilter = "all" | "members" | "f2p";
-type ViewMode = "finder" | "catalog" | "active" | "success" | "failed" | "all";
+type ViewMode = "finder" | "catalog" | "hot" | "active" | "success" | "failed" | "all";
 
 type TradeStatus = "buying" | "selling" | "done";
 
@@ -133,6 +133,16 @@ type CatalogItem = {
   volume: number | null;
 };
 
+type TopGainer = {
+  id: number;
+  name: string;
+  currentPrice: number;
+  avg24hPrice: number;
+  change: number;
+  changePct: number;
+  volume24h: number | null;
+};
+
 export default function HomePage() {
   const [budgetInput, setBudgetInput] = useState("10m");
   const [minVolumeInput, setMinVolumeInput] = useState("500");
@@ -146,6 +156,15 @@ export default function HomePage() {
   const [sortKey, setSortKey] = useState<SortKey>("estimatedProfit");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [filterTerm, setFilterTerm] = useState("");
+  const [hotFlips, setHotFlips] = useState<FlipCandidate[] | null>(null);
+  const [hotLoading, setHotLoading] = useState(false);
+  const [hotError, setHotError] = useState<string | null>(null);
+  const [topGainers, setTopGainers] = useState<TopGainer[] | null>(null);
+  const [topGainersLoading, setTopGainersLoading] = useState(false);
+  const [topGainersError, setTopGainersError] = useState<string | null>(null);
+  const [topLosers, setTopLosers] = useState<TopGainer[] | null>(null);
+  const [topLosersLoading, setTopLosersLoading] = useState(false);
+  const [topLosersError, setTopLosersError] = useState<string | null>(null);
   const [activeTrades, setActiveTrades] = useState<ActiveTrade[]>([]);
   const [failedTrades, setFailedTrades] = useState<FailedTrade[]>([]);
   const [successfulTrades, setSuccessfulTrades] = useState<SuccessTrade[]>([]);
@@ -168,6 +187,9 @@ export default function HomePage() {
   const [usedMembership, setUsedMembership] = useState<MembershipFilter>("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const formatMillions = (value: number) => `${(value / 1_000_000).toFixed(1)}M`;
+  const formatMillionsSigned = (value: number) => `${value >= 0 ? "+" : ""}${formatMillions(value)}`;
 
   useEffect(() => {
     const storedBudget = localStorage.getItem("osrs-budget");
@@ -311,6 +333,24 @@ if (storedFailedTrades) {
     setCatalogLimit(240);
   }, [catalogItems]);
 
+  useEffect(() => {
+    if ((viewMode === "hot" || viewMode === "all") && !hotFlips && !hotLoading) {
+      loadHot();
+    }
+  }, [viewMode, hotFlips, hotLoading]);
+
+  useEffect(() => {
+    if (!topGainers && !topGainersLoading) {
+      loadTopGainers();
+    }
+  }, [topGainers, topGainersLoading]);
+
+  useEffect(() => {
+    if (!topLosers && !topLosersLoading) {
+      loadTopLosers();
+    }
+  }, [topLosers, topLosersLoading]);
+
 
   async function loadCatalog() {
     setCatalogLoading(true);
@@ -327,6 +367,60 @@ if (storedFailedTrades) {
       setCatalogError(message);
     } finally {
       setCatalogLoading(false);
+    }
+  }
+
+  async function loadHot() {
+    setHotLoading(true);
+    setHotError(null);
+    try {
+      const res = await fetch("/api/high-volume");
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Failed to load high-volume items");
+      }
+      setHotFlips(data.flips ?? []);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load high-volume items";
+      setHotError(message);
+    } finally {
+      setHotLoading(false);
+    }
+  }
+
+  async function loadTopGainers() {
+    setTopGainersLoading(true);
+    setTopGainersError(null);
+    try {
+      const res = await fetch("/api/top-gainers?limit=10");
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Failed to load top gainers");
+      }
+      setTopGainers(Array.isArray(data.items) ? data.items : []);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load top gainers";
+      setTopGainersError(message);
+    } finally {
+      setTopGainersLoading(false);
+    }
+  }
+
+  async function loadTopLosers() {
+    setTopLosersLoading(true);
+    setTopLosersError(null);
+    try {
+      const res = await fetch("/api/top-losers?limit=10");
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Failed to load top losers");
+      }
+      setTopLosers(Array.isArray(data.items) ? data.items : []);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load top losers";
+      setTopLosersError(message);
+    } finally {
+      setTopLosersLoading(false);
     }
   }
 
@@ -821,17 +915,6 @@ if (storedFailedTrades) {
     return viewMode === "all" || viewMode === mode;
   }
 
-  const totalSuccessProfit = useMemo(
-    () =>
-      successfulTrades.reduce((sum, t) => {
-        const qty = t.actualSoldQuantity ?? t.quantity;
-        const buy = t.actualBuyPrice ?? t.buyPrice;
-        const sell = t.actualSellPrice ?? t.sellPrice;
-        return sum + Math.max(0, (sell - buy) * qty);
-      }, 0),
-    [successfulTrades],
-  );
-
   function remainingTime(trade: ActiveTrade) {
     const elapsedHours = (now - trade.startedAt) / (1000 * 60 * 60);
     const target = trade.status === "buying" ? trade.estBuyHours : trade.estSellHours;
@@ -851,51 +934,8 @@ if (storedFailedTrades) {
     });
   }
 
-  const highlightStats = [
-    {
-      label: "Live flips",
-      value: flips ? flips.length : "—",
-      detail: statusText ?? "Ready to scan",
-      tone: "amber",
-    },
-    {
-      label: "Active trades",
-      value: activeTrades.length,
-      detail: `${successfulTrades.length} successes logged`,
-      tone: "sky",
-    },
-    {
-      label: "Lifetime profit",
-      value: `${numberFormatter.format(Math.round(totalSuccessProfit))} gp`,
-      detail: "Tracked via your logs",
-      tone: "emerald",
-    },
-    {
-      label: "Failed log",
-      value: failedTrades.length,
-      detail: "Learn and tighten filters",
-      tone: "rose",
-    },
-  ];
-
   return (
     <main className="min-h-screen px-4 py-10 sm:px-8">
-      <div className="pointer-events-none fixed right-4 top-4 z-40 flex items-center gap-3 rounded-xl bg-slate-900/90 px-4 py-3 shadow-2xl ring-1 ring-amber-500/40">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-b from-amber-300 to-amber-600 shadow-lg ring-2 ring-amber-500/60">
-          <svg viewBox="0 0 64 64" className="h-8 w-8 text-amber-950" aria-hidden>
-            <ellipse cx="32" cy="16" rx="16" ry="8" fill="currentColor" opacity="0.8" />
-            <ellipse cx="32" cy="28" rx="16" ry="8" fill="currentColor" opacity="0.7" />
-            <ellipse cx="32" cy="40" rx="16" ry="8" fill="currentColor" opacity="0.6" />
-          </svg>
-        </div>
-        <div className="pointer-events-auto">
-          <div className="text-xs uppercase tracking-wide text-amber-300">Total profit</div>
-          <div className="text-lg font-bold text-amber-100">
-            {numberFormatter.format(Math.round(totalSuccessProfit))} gp
-          </div>
-        </div>
-      </div>
-
       <div className="mx-auto flex max-w-7xl flex-col gap-8">
         <nav className="flex flex-col gap-4 rounded-2xl bg-slate-950/70 p-4 shadow-lg ring-1 ring-slate-800 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
@@ -903,17 +943,17 @@ if (storedFailedTrades) {
               ⇄
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-amber-300">OSRS Trading Suite</p>
-              <p className="text-sm text-slate-200">Margin scans, sensible sizing, quick tracking.</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-amber-300">OSRS Market Pulse</p>
+              <p className="text-sm text-slate-200">Clean price moves, snapshots, and daily momentum.</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => switchViewAndScroll("finder", "section-finder")}
-              className="rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-950 shadow-md shadow-amber-500/30 transition hover:-translate-y-0.5 hover:bg-amber-400"
+              onClick={() => switchViewAndScroll("hot", "section-hot")}
+              className="rounded-full border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-200 transition hover:-translate-y-0.5 hover:border-amber-300"
             >
-              Start scanning
+              Volume‑toppers
             </button>
             <button
               type="button"
@@ -928,118 +968,192 @@ if (storedFailedTrades) {
             >
               Performance lab
             </a>
-            <button
-              type="button"
-              onClick={() => switchViewAndScroll("active", "section-active")}
-              className="rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:-translate-y-0.5 hover:border-amber-400 hover:text-amber-200"
-            >
-              My trades
-            </button>
-            <button
-              type="button"
-              onClick={() => switchViewAndScroll("success", "section-success")}
-              className="rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:-translate-y-0.5 hover:border-amber-400 hover:text-amber-200"
-            >
-              Logs
-            </button>
           </div>
         </nav>
 
         <div className="overflow-hidden rounded-3xl bg-slate-950/70 p-6 shadow-2xl ring-1 ring-slate-800 sm:p-8">
           <div className="grid gap-8 lg:grid-cols-12">
-            <div className="space-y-5 lg:col-span-7">
+            <div className="space-y-5 lg:col-span-12">
               <div className="inline-flex items-center gap-2 rounded-full bg-slate-900/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-amber-300 ring-1 ring-amber-500/30">
-                Live trading cockpit
+                Live market radar
               </div>
               <h1 className="text-3xl font-semibold leading-tight text-slate-50 sm:text-4xl">
-                Find flips that fit your cash, move them quickly, and keep a clean log.
+                Track the biggest 24h price moves without the noise.
               </h1>
               <p className="max-w-2xl text-base text-slate-300">
-                Scan the Grand Exchange with tuned guardrails, track fills in one place, and see which items fit your budget, time window, and appetite. Built for speed—no filler UI.
+                See what spiked, what dipped, and where the market is shifting. Clean snapshots pulled from the OSRS Wiki, refreshed on demand.
               </p>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => switchViewAndScroll("finder", "section-finder")}
-                  className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-amber-500/30 transition hover:-translate-y-0.5 hover:bg-amber-400"
-                >
-                  🚀 Find flips now
-                </button>
-                <button
-                  type="button"
-                  onClick={() => switchViewAndScroll("active", "section-active")}
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:-translate-y-0.5 hover:border-amber-400 hover:text-amber-200"
-                >
-                  📊 View my trades
-                </button>
-              </div>
-            </div>
-
-            <div className="lg:col-span-5">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {highlightStats.map((stat) => {
-                  const tones: Record<string, string> = {
-                    amber: "from-amber-500/30 via-amber-500/10 to-amber-500/0 ring-amber-400/40",
-                    sky: "from-sky-400/30 via-sky-400/10 to-sky-400/0 ring-sky-300/30",
-                    emerald: "from-emerald-400/30 via-emerald-400/10 to-emerald-400/0 ring-emerald-300/30",
-                    rose: "from-rose-400/30 via-rose-400/10 to-rose-400/0 ring-rose-300/30",
-                  };
-                  const tone = tones[stat.tone] ?? tones.amber;
-                  return (
-                    <div
-                      key={stat.label}
-                      className={`relative overflow-hidden rounded-xl bg-slate-900/70 p-4 shadow-lg ring-1 ${tone}`}
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-br from-transparent to-slate-900/60" />
-                      <div className="relative space-y-1">
-                        <p className="text-xs uppercase tracking-wide text-slate-400">{stat.label}</p>
-                        <p className="text-2xl font-bold text-slate-50">{stat.value}</p>
-                        <p className="text-sm text-slate-400">{stat.detail}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-slate-950/70 p-4 shadow-lg ring-1 ring-slate-800">
-          <span className="text-sm font-semibold text-slate-200">Workspace view:</span>
-          <div className="flex flex-wrap gap-2">
-            {([
-              { key: "finder", label: "Finder" },
-              { key: "catalog", label: "Item browser" },
-              { key: "active", label: "Active trades" },
-              { key: "success", label: "Success log" },
-              { key: "failed", label: "Failed log" },
-              { key: "all", label: "Show all" },
-            ] as { key: ViewMode; label: string }[]).map((opt) => {
-              const active = viewMode === opt.key;
-              return (
+        {viewMode !== "catalog" && (
+        <section className="grid gap-6 lg:grid-cols-2">
+          <div
+            id="section-top-gainers"
+            className="space-y-4 rounded-2xl bg-slate-950/70 p-6 shadow-2xl ring-1 ring-slate-800"
+          >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-50">Top 10 biggest gainers (24h)</h2>
+                <p className="text-sm text-slate-400">Items with the largest price increase over the last 24 hours.</p>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span className="rounded-full bg-slate-900 px-3 py-1 font-semibold text-slate-200">
+                  {topGainers ? `${topGainers.length} items` : topGainersLoading ? "Loading…" : "Ready"}
+                </span>
                 <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => switchViewAndScroll(opt.key, `section-${opt.key === "all" ? "finder" : opt.key}`)}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                    active
-                      ? "border-amber-400 bg-amber-500/10 text-amber-200"
-                      : "border-slate-800 bg-slate-900 text-slate-100 hover:border-amber-400 hover:text-amber-200"
-                  }`}
+                  className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 font-semibold text-slate-100 transition hover:border-amber-400 hover:text-amber-200"
+                  onClick={loadTopGainers}
+                  disabled={topGainersLoading}
                 >
-                  {opt.label}
+                  {topGainersLoading ? "Refreshing…" : "Refresh"}
                 </button>
-              );
-            })}
-          </div>
-        </div>
+              </div>
+            </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-sm text-slate-200 shadow-lg">
-          <p className="font-semibold text-slate-50">How to trade clean</p>
-          <p className="text-slate-300">
-            Set your budget and volume, track what you actually place, and log results. Keep fill times realistic and trim stacks if you’re in a hurry.
-          </p>
-        </div>
+            {topGainersError ? (
+              <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                {topGainersError}
+              </div>
+            ) : null}
+
+            {topGainersLoading && !topGainers ? (
+              <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+                Loading biggest gainers…
+              </div>
+            ) : null}
+
+            {topGainers && topGainers.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full border-collapse text-xs sm:text-sm">
+                  <thead>
+                    <tr className="bg-slate-900 text-left text-[11px] uppercase tracking-wide text-slate-400 sm:text-xs">
+                      <th className="px-2 py-2 text-left">Item</th>
+                      <th className="px-2 py-2 text-right">Price now (M)</th>
+                      <th className="px-2 py-2 text-right">Avg 24h (M)</th>
+                      <th className="px-2 py-2 text-right text-emerald-300">Change (M)</th>
+                      <th className="px-2 py-2 text-right text-emerald-300">Change %</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {topGainers.map((gainer) => (
+                      <tr key={gainer.id} className="hover:bg-slate-900/60 transition-colors">
+                        <td className="px-2 py-2 text-left text-slate-100">
+                          <a href={`/item/${gainer.id}`} className="flex items-center gap-2 text-amber-300 hover:underline">
+                            <Image
+                              src={itemIcon(gainer.id)}
+                              alt={gainer.name}
+                              width={28}
+                              height={28}
+                              className="h-7 w-7 rounded-md bg-slate-900 ring-1 ring-slate-800"
+                            />
+                            {gainer.name}
+                          </a>
+                        </td>
+                        <td className="px-2 py-2 text-right font-mono text-slate-200">
+                          {formatMillions(gainer.currentPrice)}
+                        </td>
+                        <td className="px-2 py-2 text-right font-mono text-slate-200">
+                          {formatMillions(gainer.avg24hPrice)}
+                        </td>
+                        <td className="px-2 py-2 text-right font-mono text-emerald-300">
+                          {formatMillionsSigned(gainer.change)}
+                        </td>
+                        <td className="px-2 py-2 text-right font-mono text-emerald-300">
+                          {(gainer.changePct * 100).toFixed(1)}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+
+          <div
+            id="section-top-losers"
+            className="space-y-4 rounded-2xl bg-slate-950/70 p-6 shadow-2xl ring-1 ring-slate-800"
+          >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-50">Top 10 biggest losers (24h)</h2>
+                <p className="text-sm text-slate-400">Items with the largest price drop over the last 24 hours.</p>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span className="rounded-full bg-slate-900 px-3 py-1 font-semibold text-slate-200">
+                  {topLosers ? `${topLosers.length} items` : topLosersLoading ? "Loading…" : "Ready"}
+                </span>
+                <button
+                  className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 font-semibold text-slate-100 transition hover:border-amber-400 hover:text-amber-200"
+                  onClick={loadTopLosers}
+                  disabled={topLosersLoading}
+                >
+                  {topLosersLoading ? "Refreshing…" : "Refresh"}
+                </button>
+              </div>
+            </div>
+
+            {topLosersError ? (
+              <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                {topLosersError}
+              </div>
+            ) : null}
+
+            {topLosersLoading && !topLosers ? (
+              <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+                Loading biggest losers…
+              </div>
+            ) : null}
+
+            {topLosers && topLosers.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full border-collapse text-xs sm:text-sm">
+                  <thead>
+                    <tr className="bg-slate-900 text-left text-[11px] uppercase tracking-wide text-slate-400 sm:text-xs">
+                      <th className="px-2 py-2 text-left">Item</th>
+                      <th className="px-2 py-2 text-right">Price now (M)</th>
+                      <th className="px-2 py-2 text-right">Avg 24h (M)</th>
+                      <th className="px-2 py-2 text-right text-rose-300">Change (M)</th>
+                      <th className="px-2 py-2 text-right text-rose-300">Change %</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {topLosers.map((loser) => (
+                      <tr key={loser.id} className="hover:bg-slate-900/60 transition-colors">
+                        <td className="px-2 py-2 text-left text-slate-100">
+                          <a href={`/item/${loser.id}`} className="flex items-center gap-2 text-amber-300 hover:underline">
+                            <Image
+                              src={itemIcon(loser.id)}
+                              alt={loser.name}
+                              width={28}
+                              height={28}
+                              className="h-7 w-7 rounded-md bg-slate-900 ring-1 ring-slate-800"
+                            />
+                            {loser.name}
+                          </a>
+                        </td>
+                        <td className="px-2 py-2 text-right font-mono text-slate-200">
+                          {formatMillions(loser.currentPrice)}
+                        </td>
+                        <td className="px-2 py-2 text-right font-mono text-slate-200">
+                          {formatMillions(loser.avg24hPrice)}
+                        </td>
+                        <td className="px-2 py-2 text-right font-mono text-rose-300">
+                          {formatMillionsSigned(loser.change)}
+                        </td>
+                        <td className="px-2 py-2 text-right font-mono text-rose-300">
+                          {(loser.changePct * 100).toFixed(1)}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+        </section>
+        )}
 
         {showSection("finder") && (
         <section
@@ -1632,6 +1746,111 @@ if (storedFailedTrades) {
                   </div>
                 </a>
               ))}
+            </div>
+          ) : null}
+        </section>
+        )}
+
+        {showSection("hot") && (
+        <section
+          id="section-hot"
+          className="space-y-4 rounded-xl bg-slate-950/60 p-6 shadow-lg ring-1 ring-slate-800 scroll-mt-28"
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-50">Hot volume picks</h2>
+              <p className="text-sm text-slate-400">No inputs—just the highest volume, freshest flips we can find right now.</p>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <span className="rounded-full bg-slate-900 px-3 py-1 font-semibold text-slate-200">
+                {hotFlips ? `${hotFlips.length} items` : hotLoading ? "Loading…" : "Ready"}
+              </span>
+              <button
+                className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 font-semibold text-slate-100 transition hover:border-amber-400 hover:text-amber-200"
+                onClick={loadHot}
+                disabled={hotLoading}
+              >
+                {hotLoading ? "Refreshing…" : "Refresh"}
+              </button>
+            </div>
+          </div>
+
+          {hotError ? (
+            <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              {hotError}
+            </div>
+          ) : null}
+
+          {hotLoading && !hotFlips ? (
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+              Loading high-volume flips…
+            </div>
+          ) : null}
+
+          {hotFlips && hotFlips.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full border-collapse text-xs sm:text-sm">
+                <thead>
+                  <tr className="bg-slate-900 text-left text-[11px] uppercase tracking-wide text-slate-400 sm:text-xs">
+                    <th className="px-2 py-2 text-left">Item</th>
+                    <th className="px-2 py-2 text-right">Buy</th>
+                    <th className="px-2 py-2 text-right">Sell</th>
+                    <th className="px-2 py-2 text-right">Volume/day</th>
+                    <th className="px-2 py-2 text-right">Margin</th>
+                    <th className="px-2 py-2 text-right">Margin %</th>
+                    <th className="px-2 py-2 text-right text-amber-300">Profit/hr</th>
+                    <th className="px-2 py-2 text-right">Suggested qty</th>
+                    <th className="px-2 py-2 text-right">Track</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {hotFlips.map((flip) => (
+                    <tr key={flip.id} className="hover:bg-slate-900/60 transition-colors">
+                      <td className="px-2 py-2 text-left text-slate-100">
+                        <a href={`/item/${flip.id}`} className="flex items-center gap-2 text-amber-300 hover:underline">
+                          <Image
+                            src={itemIcon(flip.id)}
+                            alt={flip.name}
+                            width={28}
+                            height={28}
+                            className="h-7 w-7 rounded-md bg-slate-900 ring-1 ring-slate-800"
+                          />
+                          {flip.name}
+                        </a>
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-slate-200">
+                        {numberFormatter.format(flip.buyPrice)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-slate-200">
+                        {numberFormatter.format(flip.sellPrice)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-slate-200">
+                        {numberFormatter.format(flip.volume)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-slate-200">
+                        {numberFormatter.format(flip.margin)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-slate-200">
+                        {(flip.marginPct * 100).toFixed(2)}%
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-amber-300">
+                        {numberFormatter.format(Math.round(flip.profitPerHour))}
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-slate-200">
+                        {numberFormatter.format(flip.effectiveQty)}
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        <button
+                          onClick={() => addTrade(flip)}
+                          className="rounded-lg bg-slate-800 px-2 py-1 text-[11px] font-semibold text-amber-300 hover:bg-slate-700"
+                        >
+                          Track
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : null}
         </section>
