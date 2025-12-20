@@ -70,6 +70,9 @@ export async function GET(req: Request) {
       const avgLow = record.avgLowPrice;
       const high = latestRecord.high;
       const low = latestRecord.low;
+      if (avgHigh === null || avgLow === null || high === null || low === null) {
+        continue;
+      }
       if (!Number.isFinite(avgHigh) || !Number.isFinite(avgLow) || !Number.isFinite(high) || !Number.isFinite(low)) {
         continue;
       }
